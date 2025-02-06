@@ -13,37 +13,42 @@ class ModelHandler:
         self.conversation_chain = None
         
     def initialize_model(self):
-        """Initialize the Llama 2 model and embeddings"""
-        # Initialize tokenizer with Hugging Face token
-        tokenizer = AutoTokenizer.from_pretrained(
-            settings.MODEL_NAME,
-            token=settings.HUGGINGFACE_TOKEN
-        )
+        try:
+            """Initialize the Llama 2 model and embeddings"""
+            # Initialize tokenizer with Hugging Face token
+            tokenizer = AutoTokenizer.from_pretrained(
+                settings.MODEL_NAME,
+                token=settings.HUGGINGFACE_TOKEN
+            )
+            
+            # Load the model
+            model = AutoModelForCausalLM.from_pretrained(
+                settings.MODEL_NAME,
+                token=settings.HUGGINGFACE_TOKEN,
+                device_map="auto"
+            )
+            
+            # Create text generation pipeline
+            pipe = pipeline(
+                "text-generation",
+                model=model,
+                tokenizer=tokenizer,
+                max_new_tokens=settings.MAX_NEW_TOKENS,
+                temperature=settings.TEMPERATURE,
+                top_p=settings.TOP_P,
+                repetition_penalty=settings.REPETITION_PENALTY
+            )
+            
+            # Initialize embeddings
+            embeddings = HuggingFaceEmbeddings(
+                model_name=settings.EMBEDDING_MODEL
+            )
+            
+            return pipe, embeddings
         
-        # Load the model
-        model = AutoModelForCausalLM.from_pretrained(
-            settings.MODEL_NAME,
-            token=settings.HUGGINGFACE_TOKEN,
-            device_map="auto"
-        )
-        
-        # Create text generation pipeline
-        pipe = pipeline(
-            "text-generation",
-            model=model,
-            tokenizer=tokenizer,
-            max_new_tokens=settings.MAX_NEW_TOKENS,
-            temperature=settings.TEMPERATURE,
-            top_p=settings.TOP_P,
-            repetition_penalty=settings.REPETITION_PENALTY
-        )
-        
-        # Initialize embeddings
-        embeddings = HuggingFaceEmbeddings(
-            model_name=settings.EMBEDDING_MODEL
-        )
-        
-        return pipe, embeddings
+        except Exception as e:
+            logging.error(f"Model initialization error: {e}")
+            raise
     
     def setup_conversation_chain(self, vector_store):
         """Set up the conversation chain with memory"""
@@ -62,3 +67,4 @@ class ModelHandler:
             memory=memory,
             verbose=True
         )
+
