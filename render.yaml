@@ -1,0 +1,11 @@
+services:
+  - type: web
+    name: llama2-pdf-bot
+    env: python
+    buildCommand: pip install -r requirements.txt
+    startCommand: uvicorn app.main:app --host 0.0.0.0 --port $PORT
+    envVars:
+      - key: HUGGINGFACE_TOKEN
+        sync: false
+      - key: PYTHON_VERSION
+        value: 3.9
