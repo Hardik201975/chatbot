@@ -1,8 +1,21 @@
+# AI and ML Dependencies
 google-generativeai==0.3.2
-fastapi==0.104.1
-uvicorn==0.24.0
-python-multipart==0.0.6
-pypdf==3.17.1
-pydantic==2.4.2
+transformers==4.35.2
+torch==2.1.1
 sentence-transformers==2.2.2
 faiss-cpu==1.7.4
+
+# Web Framework
+fastapi==0.104.1
+uvicorn==0.24.0
+
+# PDF Processing
+langchain==0.0.330
+pypdf==3.17.1
+python-multipart==0.0.6
+
+# Data Validation
+pydantic==2.4.2
+
+# Additional Utilities
+typing-extensions
