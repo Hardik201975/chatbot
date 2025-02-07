@@ -1,6 +1,5 @@
-# schemas.py
 from pydantic import BaseModel, Field, validator
-from typing import List, Dict, Optional
+from typing import List, Optional
 from datetime import datetime
 
 class Query(BaseModel):
