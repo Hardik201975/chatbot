@@ -1,10 +1,11 @@
-from pydantic import BaseSettings
+from pydantic_settings import BaseSettings
+from typing import Optional
 
 class Settings(BaseSettings):
     """Application settings and configuration"""
     
     # Google Generative AI settings
-    GOOGLE_API_KEY: str
+    GOOGLE_API_KEY: str  # This will automatically pull from Render's environment variables
     MODEL_NAME: str = "gemini-pro"
     EMBEDDING_MODEL: str = "sentence-transformers/all-mpnet-base-v2"
     
@@ -17,6 +18,7 @@ class Settings(BaseSettings):
     TEMPERATURE: float = 0.7
     
     class Config:
-        env_file = ".env"
+        # Remove env_file since you're using Render's environment variables
+        extra = 'ignore'
 
 settings = Settings()
