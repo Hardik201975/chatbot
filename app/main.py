@@ -1,16 +1,17 @@
 from fastapi import FastAPI, UploadFile, File, HTTPException
 from fastapi.middleware.cors import CORSMiddleware
-from langchain.document_loaders import PyPDFLoader
-from langchain.text_splitter import RecursiveCharacterTextSplitter
 import os
-from .schemas import Query, Response, UploadResponse
+import time
+from pypdf import PdfReader
+from langchain.text_splitter import RecursiveCharacterTextSplitter
+from .schemas import UploadResponse, DocumentMetadata
 from .model import ModelHandler
 from .config import settings
 
 app = FastAPI()
 model_handler = ModelHandler()
 
-# Enable CORS
+# CORS setup
 app.add_middleware(
     CORSMiddleware,
     allow_origins=["*"],
@@ -22,46 +23,75 @@ app.add_middleware(
 @app.post("/upload", response_model=UploadResponse)
 async def upload_pdf(file: UploadFile = File(...)):
     """Handle PDF upload and processing"""
-    file_path = f"temp_{file.filename}"
+    if not file.filename.endswith('.pdf'):
+        raise HTTPException(status_code=400, detail="Only PDF files are allowed")
+    
+    file_path = f"temp_{int(time.time())}_{file.filename}"
     try:
         # Save uploaded file temporarily
         with open(file_path, "wb") as f:
             content = await file.read()
             f.write(content)
         
-        # Process PDF
-        loader = PyPDFLoader(file_path)
-        documents = loader.load()
+        # Read PDF and extract text
+        pdf = PdfReader(file_path)
+        text_content = ""
+        for page in pdf.pages:
+            text_content += page.extract_text() + "\n"
         
         # Split text into chunks
         text_splitter = RecursiveCharacterTextSplitter(
             chunk_size=settings.CHUNK_SIZE,
             chunk_overlap=settings.CHUNK_OVERLAP
         )
-        texts = text_splitter.split_documents(documents)
-        
-        # Extract text content
-        text_contents = [doc.page_content for doc in texts]
+        texts = text_splitter.split_text(text_content)
         
         # Create vector store
-        model_handler.create_vector_store(text_contents)
+        model_handler.create_vector_store(texts)
         
-        # Clean up
-        os.remove(file_path)
+        # Create metadata
+        document_info = DocumentMetadata(
+            filename=file.filename,
+            page_count=len(pdf.pages),
+            chunk_count=len(texts)
+        )
         
-        return UploadResponse(message="PDF processed successfully")
+        # Clean up temporary file
+        if os.path.exists(file_path):
+            os.remove(file_path)
+        
+        return UploadResponse(
+            message="PDF processed successfully",
+            document_info=document_info,
+            success=True
+        )
     
     except Exception as e:
+        # Clean up temporary file in case of error
         if os.path.exists(file_path):
             os.remove(file_path)
         raise HTTPException(status_code=500, detail=str(e))
 
-@app.post("/chat", response_model=Response)
+@app.post("/chat")
 async def chat(query: Query):
     """Handle chat interactions"""
+    if not model_handler.vector_store:
+        raise HTTPException(
+            status_code=400, 
+            detail="Please upload a PDF first"
+        )
+    
     try:
-        response = model_handler.generate_response(query.question)
-        return Response(response=response)
+        start_time = time.time()
+        response_text = model_handler.generate_response(query.question)
+        processing_time = time.time() - start_time
+        
+        return Response(
+            response=response_text,
+            confidence=0.8,  # This is a placeholder. You might want to calculate this
+            context_used=model_handler.retrieve_context(query.question),
+            processing_time=processing_time
+        )
     
     except Exception as e:
         raise HTTPException(status_code=500, detail=str(e))
