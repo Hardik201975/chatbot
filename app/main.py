@@ -7,7 +7,7 @@ from langchain.text_splitter import RecursiveCharacterTextSplitter
 from .schemas import UploadResponse, DocumentMetadata
 from .model import ModelHandler
 from .config import settings
-from schemas import Query, Response
+from .schemas import Query, Response
 
 app = FastAPI()
 model_handler = ModelHandler()
