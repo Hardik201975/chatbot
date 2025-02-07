@@ -3,6 +3,7 @@ import faiss
 import numpy as np
 from langchain.embeddings import HuggingFaceEmbeddings
 from typing import List, Dict
+from .config import settings 
 
 class ModelHandler:
     """Handles all model-related operations"""
