@@ -16,12 +16,26 @@ class ModelHandler:
     
     def __init__(self):
         try:
+            logger.info("Starting ModelHandler initialization...")
+            
+            # Test import
+            try:
+                import sentence_transformers
+                logger.info("sentence-transformers package imported successfully")
+            except ImportError as e:
+                logger.error(f"Failed to import sentence-transformers: {e}")
+                raise
+                
             # Configure Google Generative AI
+            logger.info("Configuring Google Generative AI...")
             genai.configure(api_key=settings.GOOGLE_API_KEY)
             self.model = genai.GenerativeModel(settings.MODEL_NAME)
+            logger.info("Google Generative AI configured successfully")
             
-            # Initialize embeddings model
+            # Initialize embeddings
+            logger.info("Initializing embeddings model...")
             self.embeddings = self.initialize_embeddings()
+            logger.info("Embeddings model initialized successfully")
             
             # Initialize vector store and document storage
             self.vector_store: Optional[faiss.IndexFlatL2] = None
