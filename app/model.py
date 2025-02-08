@@ -1,18 +1,19 @@
+# app/model.py
 import google.generativeai as genai
 import faiss
 import numpy as np
 from sentence_transformers import SentenceTransformer
-from typing import List, Dict, Optional
+from typing import List, Optional
 import logging
 import os
+import gc
 from .config import settings
 
-# Configure logging
 logging.basicConfig(level=logging.INFO)
 logger = logging.getLogger(__name__)
 
 class ModelHandler:
-    """Handles all model-related operations optimized for Render deployment"""
+    """Memory-optimized model handler for Render deployment"""
     
     def __init__(self):
         try:
@@ -23,13 +24,18 @@ class ModelHandler:
             self.model = genai.GenerativeModel(settings.MODEL_NAME)
             logger.info("Google AI configured successfully")
             
-            # Set HuggingFace cache directory
+            # Set smaller cache size for HuggingFace
             os.environ['TRANSFORMERS_CACHE'] = '/tmp/huggingface'
             os.environ['HF_HOME'] = '/tmp/huggingface'
             
-            # Initialize embeddings directly with SentenceTransformer
+            # Initialize embeddings with smaller max_seq_length
             logger.info("Initializing embeddings model...")
-            self.embeddings_model = SentenceTransformer(settings.EMBEDDING_MODEL)
+            self.embeddings_model = SentenceTransformer(
+                settings.EMBEDDING_MODEL,
+                device='cpu',  # Force CPU usage
+                cache_folder='/tmp/sentence-transformers'
+            )
+            self.embeddings_model.max_seq_length = 256  # Reduce max sequence length
             logger.info("Embeddings model initialized successfully")
             
             # Initialize vector store and document storage
@@ -42,33 +48,53 @@ class ModelHandler:
             raise RuntimeError(f"Failed to initialize ModelHandler: {str(e)}")
 
     def embed_text(self, text: str) -> np.ndarray:
-        """Generate embeddings using SentenceTransformer"""
-        return self.embeddings_model.encode(text, convert_to_numpy=True)
+        """Memory-efficient embedding generation"""
+        try:
+            embedding = self.embeddings_model.encode(
+                text,
+                convert_to_numpy=True,
+                show_progress_bar=False
+            )
+            return embedding.astype('float32')  # Use float32 instead of float64
+        finally:
+            gc.collect()  # Force garbage collection after embedding
 
     def create_vector_store(self, texts: List[str]):
-        """Create a FAISS vector store with memory optimization"""
+        """Memory-optimized vector store creation"""
         if not texts:
             raise ValueError("No texts provided for vector store creation")
             
         try:
-            # Generate embeddings in batches to manage memory
-            batch_size = 32
+            # Use smaller batch size
+            batch_size = 16  # Reduced from 32
             vector_list = []
             
             for i in range(0, len(texts), batch_size):
                 batch = texts[i:i + batch_size]
-                batch_vectors = [self.embed_text(text) for text in batch]
+                batch_vectors = []
+                
+                # Process each text individually to minimize memory usage
+                for text in batch:
+                    vector = self.embed_text(text)
+                    batch_vectors.append(vector)
+                    
                 vector_list.extend(batch_vectors)
+                
+                # Force garbage collection after each batch
+                gc.collect()
                 logger.debug(f"Processed batch {i//batch_size + 1}")
 
-            vectors = np.array(vector_list).astype('float32')
+            vectors = np.array(vector_list, dtype='float32')
             
-            # Create and configure FAISS index
+            # Create memory-efficient FAISS index
             dimension = vectors.shape[1]
             index = faiss.IndexFlatL2(dimension)
             
-            # Add vectors to index
-            index.add(vectors)
+            # Add vectors in smaller batches
+            sub_batch_size = 100
+            for i in range(0, len(vectors), sub_batch_size):
+                index.add(vectors[i:i + sub_batch_size])
+                gc.collect()
             
             # Update instance variables
             self.vector_store = index
@@ -80,56 +106,7 @@ class ModelHandler:
         except Exception as e:
             logger.error(f"Error creating vector store: {str(e)}")
             raise RuntimeError(f"Failed to create vector store: {str(e)}")
-
-    def retrieve_context(self, query: str, top_k: int = 3) -> List[str]:
-        """Retrieve most relevant document chunks"""
-        if not self.vector_store:
-            logger.warning("No vector store available for context retrieval")
-            return []
-            
-        try:
-            # Generate query embedding
-            query_vector = np.array([self.embed_text(query)]).astype('float32')
-            
-            # Search in vector store
-            D, I = self.vector_store.search(query_vector, min(top_k, len(self.document_texts)))
-            
-            # Retrieve corresponding texts
-            context = [self.document_texts[i] for i in I[0]]
-            logger.debug(f"Retrieved {len(context)} context chunks")
-            return context
-            
-        except Exception as e:
-            logger.error(f"Error retrieving context: {str(e)}")
-            return []
-
-    def generate_response(self, query: str) -> str:
-        """Generate response using context-aware prompt"""
-        try:
-            context = self.retrieve_context(query)
-            context_text = ' '.join(context) if context else "No relevant context found."
-            
-            prompt = f"""
-            Context:
-            {context_text}
-            
-            Question: {query}
-            
-            Please provide a precise and helpful answer based on the given context.
-            If the context does not contain sufficient information,
-            explain that you cannot find a specific answer in the provided document.
-            """
-            
-            response = self.model.generate_content(
-                prompt,
-                generation_config=genai.types.GenerationConfig(
-                    max_output_tokens=settings.MAX_TOKENS,
-                    temperature=settings.TEMPERATURE
-                )
-            )
-            
-            return response.text
-            
-        except Exception as e:
-            logger.error(f"Error generating response: {str(e)}")
-            return "I apologize, but I encountered an error generating a response. Please try again."
+        finally:
+            # Clean up temporary variables
+            del vector_list
+            gc.collect()
