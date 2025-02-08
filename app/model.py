@@ -1,10 +1,10 @@
-# app/model.py
 import google.generativeai as genai
 import faiss
 import numpy as np
-from langchain.embeddings import HuggingFaceEmbeddings
+from sentence_transformers import SentenceTransformer
 from typing import List, Dict, Optional
 import logging
+import os
 from .config import settings
 
 # Configure logging
@@ -18,23 +18,18 @@ class ModelHandler:
         try:
             logger.info("Starting ModelHandler initialization...")
             
-            # Test import
-            try:
-                import sentence_transformers
-                logger.info("sentence-transformers package imported successfully")
-            except ImportError as e:
-                logger.error(f"Failed to import sentence-transformers: {e}")
-                raise
-                
             # Configure Google Generative AI
-            logger.info("Configuring Google Generative AI...")
             genai.configure(api_key=settings.GOOGLE_API_KEY)
             self.model = genai.GenerativeModel(settings.MODEL_NAME)
-            logger.info("Google Generative AI configured successfully")
+            logger.info("Google AI configured successfully")
             
-            # Initialize embeddings
+            # Set HuggingFace cache directory
+            os.environ['TRANSFORMERS_CACHE'] = '/tmp/huggingface'
+            os.environ['HF_HOME'] = '/tmp/huggingface'
+            
+            # Initialize embeddings directly with SentenceTransformer
             logger.info("Initializing embeddings model...")
-            self.embeddings = self.initialize_embeddings()
+            self.embeddings_model = SentenceTransformer(settings.EMBEDDING_MODEL)
             logger.info("Embeddings model initialized successfully")
             
             # Initialize vector store and document storage
@@ -46,16 +41,9 @@ class ModelHandler:
             logger.error(f"Error initializing ModelHandler: {str(e)}")
             raise RuntimeError(f"Failed to initialize ModelHandler: {str(e)}")
 
-    def initialize_embeddings(self):
-        """Initialize embeddings using Sentence Transformers with error handling"""
-        try:
-            return HuggingFaceEmbeddings(
-                model_name=settings.EMBEDDING_MODEL,
-                cache_folder="/tmp/hf_cache"  # Use temporary directory on Render
-            )
-        except Exception as e:
-            logger.error(f"Error initializing embeddings: {str(e)}")
-            raise RuntimeError(f"Failed to initialize embeddings: {str(e)}")
+    def embed_text(self, text: str) -> np.ndarray:
+        """Generate embeddings using SentenceTransformer"""
+        return self.embeddings_model.encode(text, convert_to_numpy=True)
 
     def create_vector_store(self, texts: List[str]):
         """Create a FAISS vector store with memory optimization"""
@@ -69,7 +57,7 @@ class ModelHandler:
             
             for i in range(0, len(texts), batch_size):
                 batch = texts[i:i + batch_size]
-                batch_vectors = [self.embeddings.embed_query(text) for text in batch]
+                batch_vectors = [self.embed_text(text) for text in batch]
                 vector_list.extend(batch_vectors)
                 logger.debug(f"Processed batch {i//batch_size + 1}")
 
@@ -94,14 +82,14 @@ class ModelHandler:
             raise RuntimeError(f"Failed to create vector store: {str(e)}")
 
     def retrieve_context(self, query: str, top_k: int = 3) -> List[str]:
-        """Retrieve most relevant document chunks with error handling"""
+        """Retrieve most relevant document chunks"""
         if not self.vector_store:
             logger.warning("No vector store available for context retrieval")
             return []
             
         try:
             # Generate query embedding
-            query_vector = np.array([self.embeddings.embed_query(query)]).astype('float32')
+            query_vector = np.array([self.embed_text(query)]).astype('float32')
             
             # Search in vector store
             D, I = self.vector_store.search(query_vector, min(top_k, len(self.document_texts)))
@@ -116,13 +104,11 @@ class ModelHandler:
             return []
 
     def generate_response(self, query: str) -> str:
-        """Generate response using context-aware prompt with improved error handling"""
+        """Generate response using context-aware prompt"""
         try:
-            # Retrieve relevant context
             context = self.retrieve_context(query)
             context_text = ' '.join(context) if context else "No relevant context found."
             
-            # Construct prompt
             prompt = f"""
             Context:
             {context_text}
@@ -134,23 +120,16 @@ class ModelHandler:
             explain that you cannot find a specific answer in the provided document.
             """
             
-            # Generate response with timeout and retry logic
-            try:
-                response = self.model.generate_content(
-                    prompt,
-                    generation_config=genai.types.GenerationConfig(
-                        max_output_tokens=settings.MAX_TOKENS,
-                        temperature=settings.TEMPERATURE,
-                        # Add any additional generation parameters here
-                    )
+            response = self.model.generate_content(
+                prompt,
+                generation_config=genai.types.GenerationConfig(
+                    max_output_tokens=settings.MAX_TOKENS,
+                    temperature=settings.TEMPERATURE
                 )
-                
-                return response.text
-                
-            except Exception as model_error:
-                logger.error(f"Error generating response: {str(model_error)}")
-                return "I apologize, but I encountered an error generating a response. Please try again or rephrase your question."
-                
+            )
+            
+            return response.text
+            
         except Exception as e:
-            logger.error(f"Error in generate_response: {str(e)}")
-            raise RuntimeError(f"Failed to generate response: {str(e)}")
+            logger.error(f"Error generating response: {str(e)}")
+            return "I apologize, but I encountered an error generating a response. Please try again."
