@@ -18,15 +18,44 @@ import inflect
 p = inflect.engine()
 
 def normalize_text(text: str) -> str:
-    """Convert numbers to words and apply basic text normalization."""
+    """Convert ordinal words to numbers and apply basic text normalization."""
     text = text.lower()  # Convert to lowercase
-        
-        # Convert ordinal numbers (1st -> first, 2nd -> second)
-    text = re.sub(r'(\d+)(st|nd|rd|th)', lambda x: p.number_to_words(x.group(1)), text)
-        
-        # Replace common abbreviations or variations
-    text = text.replace("1st", "first").replace("2nd", "second").replace("3rd", "third")
-        
+    
+    # Define a mapping for ordinal words to numbers
+    ordinal_map = {
+        "first": "1",
+        "second": "2",
+        "third": "3",
+        "fourth": "4",
+        "fifth": "5",
+        "sixth": "6",
+        "seventh": "7",
+        "eighth": "8",
+        "ninth": "9",
+        "tenth": "10",
+        "eleventh": "11",
+        "twelfth": "12",
+        "thirteenth": "13",
+        "fourteenth": "14",
+        "fifteenth": "15",
+        "sixteenth": "16",
+        "seventeenth": "17",
+        "eighteenth": "18",
+        "nineteenth": "19",
+        "twentieth": "20",
+        "thirtieth": "30",
+        "fortieth": "40",
+        "fiftieth": "50",
+        "sixtieth": "60",
+        "seventieth": "70",
+        "eightieth": "80",
+        "ninetieth": "90",
+    }
+    
+    # Replace ordinal words with numbers
+    for word, num in ordinal_map.items():
+        text = re.sub(rf'\b{word}\b', num, text)
+    
     return text
 
 
