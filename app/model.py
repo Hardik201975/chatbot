@@ -178,6 +178,28 @@ class ModelHandler:
         finally:
             MemoryManager.clear_memory()
 
+    def retrieve_context(self, query: str, top_k: int = 3) -> List[str]:
+        """Retrieve most relevant document chunks"""
+        if not self.vector_store:
+            logger.warning("No vector store available for context retrieval")
+            return []
+            
+        try:
+            # Generate query embedding
+            query_vector = np.array([self.embed_text(query)]).astype('float32')
+            
+            # Search in vector store
+            D, I = self.vector_store.search(query_vector, min(top_k, len(self.document_texts)))
+            
+            # Retrieve corresponding texts
+            context = [self.document_texts[i] for i in I[0]]
+            logger.debug(f"Retrieved {len(context)} context chunks")
+            return context
+            
+        except Exception as e:
+            logger.error(f"Error retrieving context: {str(e)}")
+            return []
+
 
     def generate_response(self, query: str) -> str:
         """Generate response using context-aware prompt"""
