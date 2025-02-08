@@ -177,3 +177,35 @@ class ModelHandler:
             raise
         finally:
             MemoryManager.clear_memory()
+
+
+    def generate_response(self, query: str) -> str:
+        """Generate response using context-aware prompt"""
+        try:
+            context = self.retrieve_context(query)
+            context_text = ' '.join(context) if context else "No relevant context found."
+            
+            prompt = f"""
+            Context:
+            {context_text}
+            
+            Question: {query}
+            
+            Please provide a precise and helpful answer based on the given context.
+            If the context does not contain sufficient information,
+            explain that you cannot find a specific answer in the provided document.
+            """
+            
+            response = self.model.generate_content(
+                prompt,
+                generation_config=genai.types.GenerationConfig(
+                    max_output_tokens=settings.MAX_TOKENS,
+                    temperature=settings.TEMPERATURE
+                )
+            )
+            
+            return response.text
+            
+        except Exception as e:
+            logger.error(f"Error generating response: {str(e)}")
+            return "I apologize, but I encountered an error generating a response. Please try again."
