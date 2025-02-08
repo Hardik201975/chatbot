@@ -12,6 +12,24 @@ import gc
 import psutil
 from threading import Lock
 from .config import settings
+import re
+import inflect
+
+p = inflect.engine()
+
+def normalize_text(text: str) -> str:
+    """Convert numbers to words and apply basic text normalization."""
+    text = text.lower()  # Convert to lowercase
+        
+        # Convert ordinal numbers (1st -> first, 2nd -> second)
+    text = re.sub(r'(\d+)(st|nd|rd|th)', lambda x: p.number_to_words(x.group(1)), text)
+        
+        # Replace common abbreviations or variations
+    text = text.replace("1st", "first").replace("2nd", "second").replace("3rd", "third")
+        
+    return text
+
+
 
 logging.basicConfig(
     level=logging.INFO,
@@ -123,10 +141,15 @@ class ModelHandler:
             }
         
         return text
+    
+
+
 
     def embed_text(self, text: str) -> np.ndarray:
         try:
             self._load_embeddings_model()
+
+            text = normalize_text(text)
             
             # Truncate long texts
             max_chars = settings.MAX_SEQ_LENGTH * 4
@@ -215,6 +238,7 @@ class ModelHandler:
             return []
             
         try:
+            query = normalize_text(query)
             query_vector = np.array([self.embed_text(query)]).astype('float32')
             
             # Search in vector store
